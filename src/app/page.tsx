@@ -60,6 +60,8 @@ export default function MiniApp() {
   const [activeTab, setActiveTab] = useState<'home' | 'referrals' | 'quests'>('home');
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sendingToChat, setSendingToChat] = useState(false);
+  const [sentSuccess, setSentSuccess] = useState(false);
   const [media, setMedia] = useState<ExtractedMedia | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -173,6 +175,48 @@ export default function MiniApp() {
       triggerHaptic('error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendToChat = async () => {
+    if (!media) return;
+    triggerHaptic('medium');
+    setSendingToChat(true);
+    setSentSuccess(false);
+
+    try {
+      const res = await fetch('/api/send-to-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          downloadUrl: media.downloadUrl,
+          title: media.title,
+          author: media.author,
+          platform: media.platform,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Failed to deliver video to chat');
+      }
+
+      setSentSuccess(true);
+      triggerHaptic('success');
+
+      // Auto close after 2.5 seconds so user is right in their chat with the video
+      setTimeout(() => {
+        if (window.Telegram?.WebApp?.close) {
+          window.Telegram.WebApp.close();
+        }
+      }, 2500);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Could not deliver video to chat';
+      setError(message);
+      triggerHaptic('error');
+    } finally {
+      setSendingToChat(false);
     }
   };
 
@@ -340,19 +384,43 @@ export default function MiniApp() {
 
               {/* Download buttons */}
               <div className="download-actions">
+                {/* Instant Zero-Ads Delivery to Telegram Chat */}
+                <button
+                  type="button"
+                  onClick={handleSendToChat}
+                  disabled={sendingToChat || sentSuccess}
+                  className="btn-primary"
+                  style={{
+                    background: sentSuccess
+                      ? 'linear-gradient(135deg, #10B981, #059669)'
+                      : 'linear-gradient(135deg, #00F2FE, #4FACFE)',
+                    color: '#030712',
+                    marginBottom: 6,
+                  }}
+                >
+                  {sendingToChat ? (
+                    <span>⏳ Delivering to your Telegram chat...</span>
+                  ) : sentSuccess ? (
+                    <span>✅ Delivered! Check your chat with @FlowLoadvbot</span>
+                  ) : (
+                    <>
+                      <Sparkles size={18} />
+                      <span>Send to My Telegram Chat (No Ads)</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Direct File Download via clean proxy */}
                 <a
-                  href={media.downloadUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={`/api/download?url=${encodeURIComponent(media.downloadUrl)}&filename=${encodeURIComponent(media.title)}.mp4`}
                   className="btn-download-option"
-                  download
                   onClick={() => triggerHaptic('success')}
                 >
                   <div className="btn-download-left">
                     <Film size={20} color="#00F2FE" />
                     <div>
-                      <div className="btn-download-title">Download HD Video</div>
-                      <div className="btn-download-sub">No Watermark • 1080p</div>
+                      <div className="btn-download-title">Direct Save to Device</div>
+                      <div className="btn-download-sub">Native File Download • No Ads</div>
                     </div>
                   </div>
                   <span className="btn-download-badge">FREE</span>
@@ -360,11 +428,8 @@ export default function MiniApp() {
 
                 {media.audioUrl && (
                   <a
-                    href={media.audioUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href={`/api/download?url=${encodeURIComponent(media.audioUrl)}&filename=${encodeURIComponent(media.title)}.mp3`}
                     className="btn-download-option"
-                    download
                     onClick={() => triggerHaptic('success')}
                   >
                     <div className="btn-download-left">
