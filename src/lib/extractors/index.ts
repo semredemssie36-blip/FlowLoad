@@ -71,11 +71,109 @@ async function extractTikTok(url: string): Promise<ExtractionResult> {
 }
 
 /**
+ * Instagram Reel & Video extractor via SnapSave engine
+ */
+async function extractInstagram(url: string): Promise<ExtractionResult> {
+  try {
+    const { snapsave } = await import('snapsave-media-downloader');
+    const res = await snapsave(url);
+    if (res.success && res.data?.media && res.data.media.length > 0) {
+      const item = res.data.media[0];
+      if (!item.url) {
+        throw new Error('No media URL returned by Instagram scraper');
+      }
+      return {
+        success: true,
+        data: {
+          platform: 'instagram',
+          title: 'Instagram Reel / Video',
+          thumbnail: item.thumbnail,
+          author: 'Instagram Creator',
+          downloadUrl: item.url,
+          quality: 'HD Original',
+          sourceUrl: url,
+        },
+      };
+    }
+  } catch (err: unknown) {
+    console.error('SnapSave Instagram error:', err);
+  }
+
+  return {
+    success: false,
+    error: 'Could not extract Instagram video. Make sure the profile and post are public.',
+  };
+}
+
+/**
+ * YouTube Video & Shorts extractor
+ */
+async function extractYouTube(rawUrl: string): Promise<ExtractionResult> {
+  try {
+    // Normalize any YouTube URL (youtu.be/ID or youtube.com/shorts/ID) to https://www.youtube.com/watch?v=ID
+    let videoId = '';
+    const youtuBeMatch = rawUrl.match(/youtu\.be\/([a-zA-Z0-9_-]+)/);
+    const shortsMatch = rawUrl.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]+)/);
+    const watchMatch = rawUrl.match(/[?&]v=([a-zA-Z0-9_-]+)/);
+
+    if (youtuBeMatch) {
+      videoId = youtuBeMatch[1];
+    } else if (shortsMatch) {
+      videoId = shortsMatch[1];
+    } else if (watchMatch) {
+      videoId = watchMatch[1];
+    }
+
+    const cleanUrl = videoId
+      ? `https://www.youtube.com/watch?v=${videoId}`
+      : rawUrl.split('&')[0];
+
+    const apiUrl = `https://loader.to/ajax/download.php?button=1&start=1&end=1&format=720&url=${encodeURIComponent(cleanUrl)}`;
+    const startRes = await fetch(apiUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+    });
+
+    if (startRes.ok) {
+      const startJson = await startRes.json();
+      if (startJson.id) {
+        // Poll for download URL (up to 16 seconds)
+        for (let i = 0; i < 8; i++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const pRes = await fetch(`https://lto2.affadaffa.com/api/progress?id=${startJson.id}`);
+          if (!pRes.ok) continue;
+          const p = await pRes.json();
+          if (p.download_url) {
+            return {
+              success: true,
+              data: {
+                platform: 'youtube',
+                title: p.title || startJson.title || 'YouTube Video',
+                thumbnail: p.thumbnail_url || startJson.thumbnail_url,
+                author: 'YouTube',
+                downloadUrl: p.download_url,
+                quality: '720p HD MP4',
+                sourceUrl: rawUrl,
+              },
+            };
+          }
+        }
+      }
+    }
+  } catch (err: unknown) {
+    console.warn('YouTube extraction error:', err);
+  }
+
+  return {
+    success: false,
+    error: 'Could not extract YouTube video. Please try again in a few seconds.',
+  };
+}
+
+/**
  * Twitter / X direct video extractor via FixTweet/vxTwitter API
  */
 async function extractTwitter(url: string): Promise<ExtractionResult> {
   try {
-    // Convert url to api.fxtwitter.com format
     const match = url.match(/(?:twitter\.com|x\.com)\/([^\/]+)\/status\/(\d+)/i);
     if (!match) {
       return { success: false, error: 'Invalid Twitter/X status URL' };
@@ -117,56 +215,6 @@ async function extractTwitter(url: string): Promise<ExtractionResult> {
 }
 
 /**
- * Universal extractor using Cobalt public instances (Instagram, YouTube, Pinterest, etc.)
- */
-async function extractWithCobalt(url: string, platform: ExtractedMedia['platform']): Promise<ExtractionResult> {
-  const cobaltInstances = [
-    'https://api.cobalt.tools/api/json',
-    'https://cobalt-api.kwiatekm.pl/api/json',
-  ];
-
-  for (const instance of cobaltInstances) {
-    try {
-      const res = await fetch(instance, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({
-          url: url,
-          vQuality: '1080',
-          filenamePattern: 'basic',
-        }),
-      });
-
-      if (!res.ok) continue;
-
-      const data = await res.json();
-      if (data.url || data.picker) {
-        const streamUrl = data.url || (data.picker && data.picker[0]?.url);
-        return {
-          success: true,
-          data: {
-            platform,
-            title: `${platform.toUpperCase()} Media`,
-            downloadUrl: streamUrl,
-            thumbnail: data.picker?.[0]?.thumb,
-            quality: 'HD Media',
-            sourceUrl: url,
-          },
-        };
-      }
-    } catch {
-      // Try next instance
-      continue;
-    }
-  }
-
-  return { success: false, error: `Could not extract media from ${platform}. Please check the link.` };
-}
-
-/**
  * Master extraction function
  */
 export async function extractMedia(rawUrl: string): Promise<ExtractionResult> {
@@ -180,13 +228,14 @@ export async function extractMedia(rawUrl: string): Promise<ExtractionResult> {
   switch (platform) {
     case 'tiktok':
       return await extractTikTok(url);
+    case 'instagram':
+      return await extractInstagram(url);
+    case 'youtube':
+      return await extractYouTube(url);
     case 'twitter':
       return await extractTwitter(url);
-    case 'instagram':
-    case 'youtube':
     case 'pinterest':
     default:
-      // Try platform-specific or Cobalt universal
-      return await extractWithCobalt(url, platform);
+      return await extractInstagram(url);
   }
 }

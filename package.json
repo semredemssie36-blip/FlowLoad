@@ -17,12 +17,15 @@
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@ybd-project/ytdl-core": "^6.0.8",
     "grammy": "^1.46.0",
+    "instagram-url-direct": "^2.0.7",
     "lucide-react": "^1.60.0",
     "next": "^16.4.2",
     "prisma": "^6.19.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "snapsave-media-downloader": "^2.5.1",
     "typescript": "^7.0.2"
   }
 }

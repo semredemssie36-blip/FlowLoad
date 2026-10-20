@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "functions": {
-    "/api/check-sub": {},
-    "/api/extract": {},
-    "/api/telegram": {},
-    "/api/user": {}
-  }
-}

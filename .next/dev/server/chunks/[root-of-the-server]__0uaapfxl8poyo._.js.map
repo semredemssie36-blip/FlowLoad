@@ -1,6 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 10, "column": 0}, "map": {"version":3,"sources":["file:///C:/Users/IT3/Music/project/telegram%20bot/src/lib/db.ts"],"sourcesContent":["import { PrismaClient } from '@prisma/client';\n\nconst globalForPrisma = globalThis as unknown as {\n  prisma: PrismaClient | undefined;\n};\n\nexport const db =\n  globalForPrisma.prisma ??\n  new PrismaClient({\n    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],\n  });\n\nif (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db;\n"],"names":["globalForPrisma","globalThis","db","prisma","log"],"mappings":";;;;AAAA;;AAEA,MAAMA,kBAAkBC;AAIjB,MAAMC,KACXF,gBAAgBG,MAAM,IACtB,IAAI,sMAAY,CAAC;IACfC,KAAK,uCAAyC;QAAC;QAAS;KAAO,GAAG;AACpE;AAEF,wCAA2CJ,gBAAgBG,MAAM,GAAGD"}}]
-}
