@@ -1,0 +1,9 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/api/check-sub/route": "/api/check-sub",
+  "/api/extract/route": "/api/extract",
+  "/api/telegram/route": "/api/telegram",
+  "/api/user/route": "/api/user",
+  "/page": "/"
+}

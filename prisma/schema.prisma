@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             BigInt        @id // Telegram User ID
+  username       String?
+  firstName      String
+  isSubscribed   Boolean       @default(false)
+  points         Int           @default(100)
+  streakDays     Int           @default(1)
+  downloadsCount Int           @default(0)
+  lastActive     DateTime      @default(now())
+  
+  // Referral System
+  referrerId     BigInt?
+  referrer       User?         @relation("UserReferrals", fields: [referrerId], references: [id])
+  referrals      User[]        @relation("UserReferrals")
+
+  downloadLogs   DownloadLog[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([referrerId])
+}
+
+model DownloadLog {
+  id        String   @id @default(cuid())
+  userId    BigInt
+  platform  String   // 'tiktok' | 'instagram' | 'youtube' | 'twitter' | 'pinterest'
+  url       String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model ChannelQuest {
+  id              String   @id @default(cuid())
+  title           String
+  channelUsername String
+  channelUrl      String
+  rewardPoints    Int      @default(500)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+}
