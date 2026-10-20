@@ -5,6 +5,7 @@ import { extractMedia } from '@/lib/extractors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
 
 // Initialize bot handlers once
 let initialized = false;

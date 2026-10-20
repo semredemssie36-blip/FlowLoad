@@ -135,10 +135,27 @@ async function extractYouTube(rawUrl: string): Promise<ExtractionResult> {
 
     if (startRes.ok) {
       const startJson = await startRes.json();
+      
+      // If cached download link is already present
+      if (startJson.download_url) {
+        return {
+          success: true,
+          data: {
+            platform: 'youtube',
+            title: startJson.title || 'YouTube Video',
+            thumbnail: startJson.thumbnail_url || startJson.info?.image,
+            author: 'YouTube',
+            downloadUrl: startJson.download_url,
+            quality: '720p HD MP4',
+            sourceUrl: rawUrl,
+          },
+        };
+      }
+
       if (startJson.id) {
-        // Poll for download URL (up to 16 seconds)
-        for (let i = 0; i < 8; i++) {
-          await new Promise((r) => setTimeout(r, 2000));
+        // Poll for download URL (up to 15 seconds)
+        for (let i = 0; i < 10; i++) {
+          await new Promise((r) => setTimeout(r, 1500));
           const pRes = await fetch(`https://lto2.affadaffa.com/api/progress?id=${startJson.id}`);
           if (!pRes.ok) continue;
           const p = await pRes.json();
