@@ -21,27 +21,38 @@ export async function POST(req: NextRequest) {
       `👤 ${author || platform?.toUpperCase() || 'Creator'}\n\n` +
       `⚡ Downloaded via @${process.env.NEXT_PUBLIC_BOT_USERNAME || 'FlowLoadvbot'}`;
 
+    // Fetch raw video bytes and upload directly to Telegram as InputFile
     try {
-      await bot.api.sendVideo(Number(userId), downloadUrl, {
-        caption,
-        parse_mode: 'Markdown',
-      });
-      return NextResponse.json({ success: true, message: 'Video delivered to chat' });
-    } catch (videoError: unknown) {
-      console.warn('sendVideo error, sending direct file message:', videoError);
-      
-      // If direct video fails, send as document or message with direct stream link
-      await bot.api.sendDocument(Number(userId), downloadUrl, {
-        caption,
-        parse_mode: 'Markdown',
-      }).catch(async () => {
-        await bot.api.sendMessage(
-          Number(userId),
-          `🎬 **${title || 'Your Video'}** is ready!\n\nTap below to download directly:\n${downloadUrl}`
-        );
+      const { InputFile } = await import('grammy');
+      const res = await fetch(downloadUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
       });
 
-      return NextResponse.json({ success: true, message: 'Delivered to chat' });
+      if (!res.ok) throw new Error('Could not fetch video stream');
+
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('text/html')) {
+        throw new Error('Third-party provider returned an ad page instead of video');
+      }
+
+      const buffer = Buffer.from(await res.arrayBuffer());
+
+      await bot.api.sendVideo(Number(userId), new InputFile(buffer, `${title || 'video'}.mp4`), {
+        caption,
+        parse_mode: 'Markdown',
+      });
+
+      return NextResponse.json({ success: true, message: 'Video delivered directly to chat' });
+    } catch (videoError: unknown) {
+      const errMessage = videoError instanceof Error ? videoError.message : 'Error sending video';
+      console.warn('sendVideo InputFile error:', errMessage);
+      
+      return NextResponse.json(
+        { success: false, error: errMessage },
+        { status: 500 }
+      );
     }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to send to chat';

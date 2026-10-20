@@ -138,27 +138,41 @@ async function processAndSendMedia(chatId: number, url: string) {
       keyboard.webApp('🚀 Open Mini App', APP_URL);
     }
 
-    // Try sending as native video first
+    // Upload native video file directly to chat using InputFile
     try {
-      await bot.api.sendVideo(chatId, media.downloadUrl, {
+      const { InputFile } = await import('grammy');
+      
+      const fileRes = await fetch(media.downloadUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+      });
+
+      const contentType = fileRes.headers.get('content-type') || '';
+      if (!fileRes.ok || contentType.includes('text/html')) {
+        throw new Error('Could not download clean video file (upstream returned ad or blocked stream)');
+      }
+
+      const buffer = Buffer.from(await fileRes.arrayBuffer());
+
+      await bot.api.sendVideo(chatId, new InputFile(buffer, `${media.title || 'video'}.mp4`), {
         caption,
         parse_mode: 'Markdown',
         reply_markup: keyboard,
       });
+
       // Delete temporary "extracting" message
       await bot.api.deleteMessage(chatId, statusMsg.message_id).catch(() => {});
-    } catch (videoError) {
-      console.warn('sendVideo error, falling back to direct link:', videoError);
-      // Fallback: Send clickable link button
+    } catch (videoError: unknown) {
+      const errText = videoError instanceof Error ? videoError.message : 'Upload failed';
+      console.warn('sendVideo InputFile error:', errText);
+
       await bot.api.editMessageText(
         chatId,
         statusMsg.message_id,
-        `🎬 **${media.title}**\n\nYour HD video is ready! Click the button below to download or view:`,
+        `⚠️ **Could not download this video directly:** The source host blocked direct extraction.\n\nPlease try another link or download via our Mini App!`,
         {
-          reply_markup: new InlineKeyboard()
-            .url('📥 Download Video', media.downloadUrl)
-            .row()
-            .webApp('🚀 Open Mini App', APP_URL || 'https://t.me'),
+          reply_markup: keyboard,
         }
       );
     }
