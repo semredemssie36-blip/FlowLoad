@@ -272,25 +272,40 @@ async function deliverMovieWithTimer(
   title: string,
   quality: string
 ) {
-  const keyboard = new InlineKeyboard();
-  if (APP_URL) {
-    keyboard.webApp('🍿 Watch More in Mini App', APP_URL).row();
-  }
-  keyboard.url('📢 Official Channel', `https://t.me/${CHANNEL_USERNAME.replace('@', '')}`);
+  const matches = await searchMovies(title);
+  const movie = matches[0];
+  const { getStreamingUrls } = await import('@/lib/movies');
+  const urls = getStreamingUrls(movie?.tmdbId || 533535, movie?.type || 'movie');
 
-  const msg = await bot.api.sendMessage(
-    chatId,
+  const keyboard = new InlineKeyboard()
+    .url('▶️ Watch / Stream Online (Full HD)', urls.playerUrl)
+    .row()
+    .url('📥 Fast Download (Browser / VLC)', urls.streamUrl)
+    .row()
+    .url('📢 Official Channel', `https://t.me/${CHANNEL_USERNAME.replace('@', '')}`)
+    .webApp('🍿 Open Cinema App', APP_URL || 'https://flow-load-chi.vercel.app');
+
+  const caption =
     `🍿 **${title}** • [${quality}]\n\n` +
     `⚡ **Status:** High-speed HD stream ready!\n\n` +
     `⚠️ **IMPORTANT COPYRIGHT WARNING:**\n` +
-    `🛡️ This message and media file will **AUTOMATICALLY SELF-DESTRUCT IN 3 HOURS**.\n` +
+    `🛡️ This message and media links will **AUTOMATICALLY SELF-DESTRUCT IN 3 HOURS**.\n` +
     `📥 **Forward or save this to your "Saved Messages" immediately** to keep it forever!\n\n` +
-    `🕒 _Self-destruct timer started: 3 hours remaining._`,
-    {
+    `🕒 _Self-destruct timer started: 3 hours remaining._`;
+
+  let msg;
+  if (movie?.posterUrl && movie.posterUrl.startsWith('http')) {
+    msg = await bot.api.sendPhoto(chatId, movie.posterUrl, {
+      caption,
       parse_mode: 'Markdown',
       reply_markup: keyboard,
-    }
-  );
+    });
+  } else {
+    msg = await bot.api.sendMessage(chatId, caption, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
+  }
 
   // Schedule auto-delete after 3 hours (3 * 3600 * 1000 ms)
   const THREE_HOURS_MS = 3 * 60 * 60 * 1000;

@@ -245,6 +245,28 @@ export async function getTrendingMedia(): Promise<MovieSearchResult[]> {
 }
 
 /**
+ * Generate working stream and fast player URLs for movies and shows
+ */
+export function getStreamingUrls(tmdbId?: number, type: 'movie' | 'tv' = 'movie', season = 1, episode = 1) {
+  if (!tmdbId) {
+    return {
+      streamUrl: 'https://vidsrc.to',
+      playerUrl: 'https://vidsrc.to',
+    };
+  }
+  if (type === 'tv') {
+    return {
+      streamUrl: `https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episode}`,
+      playerUrl: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1&s=${season}&e=${episode}`,
+    };
+  }
+  return {
+    streamUrl: `https://vidsrc.to/embed/movie/${tmdbId}`,
+    playerUrl: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1`,
+  };
+}
+
+/**
  * Schedule a Telegram message to be auto-deleted after X hours (Default: 3 hours)
  * This protects the bot and user against copyright flags.
  */

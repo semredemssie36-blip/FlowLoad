@@ -182,6 +182,7 @@ export default function CinemaMiniApp() {
           posterUrl: selectedMovie.posterUrl,
           overview: selectedMovie.overview,
           type: selectedMovie.type,
+          tmdbId: selectedMovie.tmdbId,
         }),
       });
 
@@ -679,6 +680,27 @@ export default function CinemaMiniApp() {
 
               {/* Action Buttons */}
               <div className="modal-actions">
+                <a
+                  href={`https://multiembed.mov/?video_id=${selectedMovie.tmdbId || 533535}&tmdb=1`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="send-to-chat-btn"
+                  style={{
+                    textDecoration: 'none',
+                    background: 'linear-gradient(135deg, #00F2FE, #4FACFE)',
+                    color: '#07090E',
+                    fontWeight: 800,
+                  }}
+                  onClick={() => {
+                    const playerUrl = `https://multiembed.mov/?video_id=${selectedMovie.tmdbId || 533535}&tmdb=1`;
+                    if (window.Telegram?.WebApp?.openLink) {
+                      window.Telegram.WebApp.openLink(playerUrl);
+                    }
+                  }}
+                >
+                  <Play size={18} fill="#07090E" /> ▶️ Watch Movie in Player Now
+                </a>
+
                 <button
                   className="send-to-chat-btn"
                   onClick={handleSendToChat}
@@ -688,7 +710,7 @@ export default function CinemaMiniApp() {
                     <>⏳ Sending to Telegram Chat...</>
                   ) : (
                     <>
-                      <Download size={18} /> Send to My Telegram Chat
+                      <Download size={18} /> Send Video Links to Telegram Chat
                     </>
                   )}
                 </button>
