@@ -257,13 +257,16 @@ export async function scheduleAutoDelete(
 
   // 1. Save in database for persistent cleanup
   try {
-    await prisma.autoDeleteMessage.create({
-      data: {
-        chatId: BigInt(chatId),
-        messageId,
-        deleteAt,
-      },
-    });
+    const autoDelete = (prisma as any).autoDeleteMessage;
+    if (autoDelete) {
+      await autoDelete.create({
+        data: {
+          chatId: BigInt(chatId),
+          messageId,
+          deleteAt,
+        },
+      });
+    }
   } catch (err) {
     console.warn('Could not save auto-delete record in DB:', err);
   }
@@ -274,10 +277,13 @@ export async function scheduleAutoDelete(
       await bot.api.deleteMessage(chatId, messageId);
       console.log(`[AutoDelete] Message ${messageId} in chat ${chatId} successfully deleted.`);
       try {
-        await prisma.autoDeleteMessage.updateMany({
-          where: { chatId: BigInt(chatId), messageId },
-          data: { isDeleted: true },
-        });
+        const autoDelete = (prisma as any).autoDeleteMessage;
+        if (autoDelete) {
+          await autoDelete.updateMany({
+            where: { chatId: BigInt(chatId), messageId },
+            data: { isDeleted: true },
+          });
+        }
       } catch {}
     } catch (e) {
       console.warn(`[AutoDelete] Failed to delete message ${messageId}:`, e);
@@ -290,7 +296,10 @@ export async function scheduleAutoDelete(
  */
 export async function runAutoDeleteSweep(): Promise<number> {
   try {
-    const expired = await prisma.autoDeleteMessage.findMany({
+    const autoDelete = (prisma as any).autoDeleteMessage;
+    if (!autoDelete) return 0;
+
+    const expired = await autoDelete.findMany({
       where: {
         deleteAt: { lte: new Date() },
         isDeleted: false,
@@ -307,7 +316,7 @@ export async function runAutoDeleteSweep(): Promise<number> {
         // Message might have already been deleted by user or Telegram
       }
 
-      await prisma.autoDeleteMessage.update({
+      await autoDelete.update({
         where: { id: item.id },
         data: { isDeleted: true },
       });
