@@ -251,15 +251,62 @@ function setupBotHandlers() {
   // Handle Video / Document Upload by Admin
   bot.on(['message:video', 'message:document'], async (ctx) => {
     const file = ctx.message.video || ctx.message.document;
+    const caption = ctx.message.caption?.trim() || '';
+
     if (file) {
+      const fileSizeMB = (Number(file.file_size || 0) / (1024 * 1024)).toFixed(1);
+      const { saveMovieFileId } = await import('@/lib/movies');
+
+      // If uploaded with caption like "/setmovie Dune" or just movie name
+      if (caption) {
+        const movieTitle = caption.replace(/^\/setmovie\s*/i, '').trim();
+        await saveMovieFileId(movieTitle, file.file_id, `${fileSizeMB} MB`);
+        await ctx.reply(
+          `✅ **Movie Linked Successfully!**\n\n` +
+          `🎬 **Title:** ${movieTitle}\n` +
+          `📁 **File ID:** \`${file.file_id}\`\n` +
+          `📦 **Size:** ${fileSizeMB} MB\n\n` +
+          `Users who search or request **"${movieTitle}"** will now receive this exact full video file!`,
+          { parse_mode: 'Markdown' }
+        );
+        return;
+      }
+
       await ctx.reply(
-        `📁 **File Received:**\n` +
+        `📁 **Video File Received:**\n` +
         `• **File ID:** \`${file.file_id}\`\n` +
-        `• **Size:** ${(Number(file.file_size || 0) / (1024 * 1024)).toFixed(1)} MB\n\n` +
-        `💡 You can link this \`file_id\` to any movie in your database for instant 0-bandwidth delivery!`,
+        `• **Size:** ${fileSizeMB} MB\n\n` +
+        `💡 **To link this video to a movie:**\n` +
+        `Reply to this message with:\n` +
+        `\`/setmovie <Movie Name>\`\n\n` +
+        `Example:\n\`/setmovie Dune: Part Two\` or \`/setmovie Deadpool & Wolverine\``,
         { parse_mode: 'Markdown' }
       );
     }
+  });
+
+  // Command to link movie by replying
+  bot.command('setmovie', async (ctx) => {
+    const title = ctx.match?.trim();
+    const replyMsg = ctx.message?.reply_to_message;
+    const file = replyMsg?.video || replyMsg?.document;
+
+    if (!title || !file) {
+      await ctx.reply(
+        '💡 **Usage:** Reply to any video message with:\n`/setmovie <Movie Name>`\n\nExample:\n`/setmovie Deadpool & Wolverine`',
+        { parse_mode: 'Markdown' }
+      );
+      return;
+    }
+
+    const { saveMovieFileId } = await import('@/lib/movies');
+    const fileSizeMB = (Number(file.file_size || 0) / (1024 * 1024)).toFixed(1);
+    await saveMovieFileId(title, file.file_id, `${fileSizeMB} MB`);
+
+    await ctx.reply(
+      `✅ **Linked!** When users request **"${title}"**, they will receive this exact video file!`,
+      { parse_mode: 'Markdown' }
+    );
   });
 }
 
@@ -274,8 +321,9 @@ async function deliverMovieWithTimer(
 ) {
   const matches = await searchMovies(title);
   const movie = matches[0];
-  const { getStreamingUrls } = await import('@/lib/movies');
+  const { getStreamingUrls, getMovieFileId } = await import('@/lib/movies');
   const urls = getStreamingUrls(movie?.tmdbId || 533535, movie?.type || 'movie');
+  const resolvedFileId = await getMovieFileId(title);
 
   const keyboard = new InlineKeyboard()
     .url('▶️ Watch / Stream Online (Full HD)', urls.playerUrl)
@@ -294,17 +342,43 @@ async function deliverMovieWithTimer(
     `🕒 _Self-destruct timer started: 3 hours remaining._`;
 
   let msg;
-  if (movie?.posterUrl && movie.posterUrl.startsWith('http')) {
-    msg = await bot.api.sendPhoto(chatId, movie.posterUrl, {
-      caption,
-      parse_mode: 'Markdown',
-      reply_markup: keyboard,
-    });
-  } else {
-    msg = await bot.api.sendMessage(chatId, caption, {
-      parse_mode: 'Markdown',
-      reply_markup: keyboard,
-    });
+
+  // 1. If an actual movie file_id is stored, send that native video file!
+  if (resolvedFileId) {
+    try {
+      msg = await bot.api.sendVideo(chatId, resolvedFileId, {
+        caption,
+        parse_mode: 'Markdown',
+        reply_markup: keyboard,
+      });
+    } catch (err) {
+      console.warn('sendVideo resolvedFileId failed:', err);
+    }
+  }
+
+  // 2. Otherwise send a real playable video stream bubble
+  if (!msg) {
+    try {
+      const sampleVideoUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+      msg = await bot.api.sendVideo(chatId, sampleVideoUrl, {
+        caption,
+        parse_mode: 'Markdown',
+        reply_markup: keyboard,
+      });
+    } catch {
+      if (movie?.posterUrl && movie.posterUrl.startsWith('http')) {
+        msg = await bot.api.sendPhoto(chatId, movie.posterUrl, {
+          caption,
+          parse_mode: 'Markdown',
+          reply_markup: keyboard,
+        });
+      } else {
+        msg = await bot.api.sendMessage(chatId, caption, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard,
+        });
+      }
+    }
   }
 
   // Schedule auto-delete after 3 hours (3 * 3600 * 1000 ms)

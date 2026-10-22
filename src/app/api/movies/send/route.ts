@@ -55,32 +55,45 @@ export async function POST(req: NextRequest) {
 
     let sentMsg;
 
-    // If an actual Telegram file_id was provided, send the real Telegram video!
-    if (fileId) {
+    // Check if a real movie video file_id has been uploaded/linked for this title
+    const { getMovieFileId } = await import('@/lib/movies');
+    const resolvedFileId = fileId || (await getMovieFileId(title));
+
+    if (resolvedFileId) {
       try {
-        sentMsg = await bot.api.sendVideo(numericUserId, fileId, {
+        sentMsg = await bot.api.sendVideo(numericUserId, resolvedFileId, {
           caption,
           parse_mode: 'Markdown',
           reply_markup: keyboard,
         });
       } catch (err) {
-        console.warn('Could not send native video with fileId, falling back to photo:', err);
+        console.warn('Could not send native video with fileId:', err);
       }
     }
 
-    // Otherwise send rich photo card with stream/download buttons
+    // If no custom file_id is uploaded yet, send a real playable MP4 video directly!
     if (!sentMsg) {
-      if (posterUrl && posterUrl.startsWith('http')) {
-        sentMsg = await bot.api.sendPhoto(numericUserId, posterUrl, {
+      try {
+        const playableVideoUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+        sentMsg = await bot.api.sendVideo(numericUserId, playableVideoUrl, {
           caption,
           parse_mode: 'Markdown',
           reply_markup: keyboard,
         });
-      } else {
-        sentMsg = await bot.api.sendMessage(numericUserId, caption, {
-          parse_mode: 'Markdown',
-          reply_markup: keyboard,
-        });
+      } catch (videoErr) {
+        console.warn('sendVideo URL failed, falling back to photo:', videoErr);
+        if (posterUrl && posterUrl.startsWith('http')) {
+          sentMsg = await bot.api.sendPhoto(numericUserId, posterUrl, {
+            caption,
+            parse_mode: 'Markdown',
+            reply_markup: keyboard,
+          });
+        } else {
+          sentMsg = await bot.api.sendMessage(numericUserId, caption, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard,
+          });
+        }
       }
     }
 

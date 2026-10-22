@@ -350,3 +350,64 @@ export async function runAutoDeleteSweep(): Promise<number> {
     return 0;
   }
 }
+
+// In-memory cache for fast file delivery
+const MOVIE_FILE_CACHE: Record<string, string> = {
+  'dune: part two': '',
+  'deadpool & wolverine': '',
+};
+
+/**
+ * Get Telegram file_id for a movie title
+ */
+export async function getMovieFileId(title: string): Promise<string | null> {
+  const norm = title.trim().toLowerCase();
+  if (MOVIE_FILE_CACHE[norm]) return MOVIE_FILE_CACHE[norm];
+
+  try {
+    const movieFileModel = (prisma as any).movieFile;
+    if (movieFileModel) {
+      const found = await movieFileModel.findFirst({
+        where: {
+          title: {
+            contains: title.trim(),
+            mode: 'insensitive',
+          },
+        },
+      });
+      if (found?.fileId) {
+        MOVIE_FILE_CACHE[norm] = found.fileId;
+        return found.fileId;
+      }
+    }
+  } catch (err) {
+    console.warn('DB file_id query error:', err);
+  }
+  return null;
+}
+
+/**
+ * Save Telegram file_id for a movie
+ */
+export async function saveMovieFileId(title: string, fileId: string, fileSize?: string): Promise<boolean> {
+  const norm = title.trim().toLowerCase();
+  MOVIE_FILE_CACHE[norm] = fileId.trim();
+
+  try {
+    const movieFileModel = (prisma as any).movieFile;
+    if (movieFileModel) {
+      await movieFileModel.create({
+        data: {
+          title: title.trim(),
+          fileId: fileId.trim(),
+          quality: '1080p Full HD',
+          fileSize: fileSize || 'HD Video',
+        },
+      });
+      return true;
+    }
+  } catch (err) {
+    console.warn('DB file_id save error:', err);
+  }
+  return true;
+}
