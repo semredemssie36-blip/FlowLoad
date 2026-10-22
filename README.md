@@ -23,6 +23,7 @@ A viral **Telegram Bot & Telegram Mini App** inspired by bots like `@hd_series_a
 ### 4. ⚡ All-in-One Social Video Downloader (Bonus)
 - Downloader for **TikTok** (watermark-free 1080p), **Instagram Reels**, **YouTube Shorts**, **Twitter/X**, and **Pinterest**.
 
+
 ### 5. 🍿 Netflix-Style Telegram Mini App (TMA)
 - Glassmorphic cinematic dark theme (`#07090E`).
 - Trending Hero Carousel, Instant Search, Filter Chips (Movies, Series, Top Rated).
