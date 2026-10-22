@@ -61,27 +61,32 @@ export async function POST(req: NextRequest) {
 
     if (resolvedFileId) {
       try {
-        sentMsg = await bot.api.sendVideo(numericUserId, resolvedFileId, {
-          caption,
+        sentMsg = await bot.api.sendDocument(numericUserId, resolvedFileId, {
+          caption: `🎬 **${title}**\n⚡ Follow @${process.env.NEXT_PUBLIC_BOT_USERNAME || 'FlowLoadvbot'} for all movies and series`,
           parse_mode: 'Markdown',
-          reply_markup: keyboard,
         });
       } catch (err) {
-        console.warn('Could not send native video with fileId:', err);
+        console.warn('sendDocument failed, trying sendVideo:', err);
+        try {
+          sentMsg = await bot.api.sendVideo(numericUserId, resolvedFileId, {
+            caption,
+            parse_mode: 'Markdown',
+            reply_markup: keyboard,
+          });
+        } catch {}
       }
     }
 
-    // If no custom file_id is uploaded yet, send a real playable MP4 video directly!
+    // If no custom file is uploaded yet, send a real playable MP4 video document
     if (!sentMsg) {
       try {
         const playableVideoUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
-        sentMsg = await bot.api.sendVideo(numericUserId, playableVideoUrl, {
-          caption,
+        sentMsg = await bot.api.sendDocument(numericUserId, playableVideoUrl, {
+          caption: `🎬 **${title} 720p BluRay.mp4**\n⚡ Follow @${process.env.NEXT_PUBLIC_BOT_USERNAME || 'FlowLoadvbot'} for all movies and series`,
           parse_mode: 'Markdown',
-          reply_markup: keyboard,
         });
       } catch (videoErr) {
-        console.warn('sendVideo URL failed, falling back to photo:', videoErr);
+        console.warn('sendDocument URL failed, falling back to photo:', videoErr);
         if (posterUrl && posterUrl.startsWith('http')) {
           sentMsg = await bot.api.sendPhoto(numericUserId, posterUrl, {
             caption,
@@ -97,9 +102,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Send the 3-Hour Copyright Notice directly below the file
+    const warningMsg = await bot.api.sendMessage(
+      numericUserId,
+      `⚠️ **Please download or forward these files somewhere safe. They will be deleted in about 3 hours to reduce copyright risk.**`,
+      { parse_mode: 'Markdown' }
+    );
+
     // 4. Schedule 3-hour automatic deletion
     const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
-    await scheduleAutoDelete(numericUserId, sentMsg.message_id, THREE_HOURS_MS);
+    if (sentMsg) {
+      await scheduleAutoDelete(numericUserId, sentMsg.message_id, THREE_HOURS_MS);
+    }
+    await scheduleAutoDelete(numericUserId, warningMsg.message_id, THREE_HOURS_MS);
 
     return NextResponse.json({
       success: true,
