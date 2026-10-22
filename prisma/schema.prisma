@@ -32,7 +32,7 @@ model User {
 model DownloadLog {
   id        String   @id @default(cuid())
   userId    BigInt
-  platform  String   // 'tiktok' | 'instagram' | 'youtube' | 'twitter' | 'pinterest'
+  platform  String   // 'movie' | 'series' | 'tiktok' | 'instagram' | 'youtube' | 'twitter'
   url       String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
@@ -48,4 +48,53 @@ model ChannelQuest {
   rewardPoints    Int      @default(500)
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
+}
+
+model MovieItem {
+  id            String      @id @default(cuid())
+  tmdbId        Int?        @unique
+  title         String
+  originalTitle String?
+  type          String      @default("movie") // "movie" | "tv"
+  overview      String?
+  posterPath    String?
+  backdropPath  String?
+  releaseDate   String?
+  rating        Float       @default(0)
+  genres        String[]
+  files         MovieFile[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([title])
+  @@index([tmdbId])
+}
+
+model MovieFile {
+  id            String     @id @default(cuid())
+  movieItemId   String?
+  movieItem     MovieItem? @relation(fields: [movieItemId], references: [id], onDelete: Cascade)
+  title         String
+  fileId        String     // Telegram file_id or message_id in storage channel
+  quality       String     @default("1080p") // "480p", "720p", "1080p", "4K"
+  season        Int?
+  episode       Int?
+  fileSize      String?    // e.g. "1.4 GB"
+  storageChatId String?
+  downloads     Int        @default(0)
+  createdAt     DateTime   @default(now())
+
+  @@index([title])
+  @@index([movieItemId])
+}
+
+model AutoDeleteMessage {
+  id        String   @id @default(cuid())
+  chatId    BigInt
+  messageId Int
+  deleteAt  DateTime // Scheduled 3 hours from delivery
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([deleteAt, isDeleted])
 }

@@ -3,8 +3,8 @@ import Script from 'next/script';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'FlowLoad - All-in-One HD Media Downloader',
-  description: 'Download high quality watermark-free videos from TikTok, Instagram, YouTube, X, and Pinterest instantly.',
+  title: 'FlowLoad - HD Series & Movies Cinema',
+  description: 'Search & stream HD Movies, TV Series, and download social media videos directly to your Telegram chat.',
 };
 
 export const viewport: Viewport = {

@@ -2,32 +2,39 @@
 
 import React, { useState, useEffect } from 'react';
 import {
+  Film,
+  Search,
   Download,
-  Clipboard,
-  Sparkles,
   Share2,
   Users,
+  ShieldAlert,
+  Star,
   CheckCircle2,
   AlertCircle,
-  Music,
-  Film,
-  Zap,
-  Gift,
+  Clock,
+  Sparkles,
   ExternalLink,
+  Clipboard,
+  X,
+  Play,
   Flame,
-  ArrowRight
+  Tv,
+  Radio,
+  Zap,
 } from 'lucide-react';
 
-interface ExtractedMedia {
-  platform: 'tiktok' | 'instagram' | 'youtube' | 'twitter' | 'pinterest' | 'generic';
+interface MovieItem {
+  id: string | number;
+  tmdbId?: number;
   title: string;
-  thumbnail?: string;
-  author?: string;
-  duration?: string;
-  downloadUrl: string;
-  audioUrl?: string;
-  quality?: string;
-  sourceUrl: string;
+  type: 'movie' | 'tv';
+  overview: string;
+  posterUrl: string;
+  backdropUrl: string;
+  releaseDate: string;
+  rating: number;
+  genres: string[];
+  qualities?: string[];
 }
 
 declare global {
@@ -56,24 +63,36 @@ declare global {
   }
 }
 
-export default function MiniApp() {
-  const [activeTab, setActiveTab] = useState<'home' | 'referrals' | 'quests'>('home');
-  const [url, setUrl] = useState('');
+export default function CinemaMiniApp() {
+  const [activeTab, setActiveTab] = useState<'cinema' | 'downloader' | 'vip' | 'channel'>('cinema');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState<'all' | 'movie' | 'tv' | 'top'>('all');
+  const [movies, setMovies] = useState<MovieItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [sendingToChat, setSendingToChat] = useState(false);
-  const [sentSuccess, setSentSuccess] = useState(false);
-  const [media, setMedia] = useState<ExtractedMedia | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [selectedMovie, setSelectedMovie] = useState<MovieItem | null>(null);
+  const [selectedQuality, setSelectedQuality] = useState('1080p Full HD');
+  
+  // Delivery State
+  const [sendingMovie, setSendingMovie] = useState(false);
+  const [sendSuccessMessage, setSendSuccessMessage] = useState<string | null>(null);
+  const [sendErrorMessage, setSendErrorMessage] = useState<string | null>(null);
+  const [showSubModal, setShowSubModal] = useState(false);
 
-  // Telegram User & Membership State
+  // Social Downloader State
+  const [downloadUrl, setDownloadUrl] = useState('');
+  const [extracting, setExtracting] = useState(false);
+  const [extractedMedia, setExtractedMedia] = useState<any>(null);
+  const [extractError, setExtractError] = useState<string | null>(null);
+
+  // User & Channel State
   const [user, setUser] = useState<{ id: number; name: string; username?: string }>({
     id: 10001,
-    name: 'Explorer',
+    name: 'Movie Fan',
   });
-  const [isSubscribed, setIsSubscribed] = useState(true);
-  const [channelUsername, setChannelUsername] = useState('@YourChannel');
-  const [channelUrl, setChannelUrl] = useState('https://t.me');
-  const [referralsCount, setReferralsCount] = useState(3);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [channelUsername, setChannelUsername] = useState('@FlowLoad');
+  const [channelUrl, setChannelUrl] = useState('https://t.me/FlowLoad');
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Initialize Telegram WebApp SDK
   useEffect(() => {
@@ -83,499 +102,696 @@ export default function MiniApp() {
       tg.expand();
 
       if (tg.initDataUnsafe?.user) {
-        const u = tg.initDataUnsafe.user;
         setUser({
-          id: u.id,
-          name: u.first_name,
-          username: u.username,
+          id: tg.initDataUnsafe.user.id,
+          name: tg.initDataUnsafe.user.first_name,
+          username: tg.initDataUnsafe.user.username,
         });
-
-        // Sync user with PostgreSQL database
-        fetch('/api/user', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: u.id,
-            firstName: u.first_name,
-            username: u.username,
-          }),
-        })
-          .then((res) => res.json())
-          .then((resData) => {
-            if (resData.success && resData.user) {
-              setReferralsCount(resData.user.referralsCount || 0);
-            }
-          })
-          .catch(() => {});
-
-        // Check channel subscription status
-        fetch(`/api/check-sub?userId=${u.id}`)
-          .then((res) => res.json())
-          .then((data) => {
-            if (data.subscribed !== undefined) {
-              setIsSubscribed(data.subscribed);
-              if (data.channelUsername) setChannelUsername(data.channelUsername);
-              if (data.channelUrl) setChannelUrl(data.channelUrl);
-            }
-          })
-          .catch(() => {});
       }
     }
+
+    // Check membership and fetch initial trending movies
+    fetchMovies('');
+    checkSubscription();
   }, []);
 
-  const triggerHaptic = (type: 'medium' | 'success' | 'error' = 'medium') => {
-    if (typeof window !== 'undefined' && window.Telegram?.WebApp?.HapticFeedback) {
-      if (type === 'success' || type === 'error') {
-        window.Telegram.WebApp.HapticFeedback.notificationOccurred(type);
-      } else {
-        window.Telegram.WebApp.HapticFeedback.impactOccurred('medium');
-      }
-    }
-  };
-
-  const handlePaste = async () => {
-    triggerHaptic('medium');
+  async function checkSubscription() {
     try {
-      const text = await navigator.clipboard.readText();
-      if (text && text.startsWith('http')) {
-        setUrl(text);
-        setError(null);
+      const res = await fetch(`/api/check-sub?userId=${user.id}`);
+      const data = await res.json();
+      if (data.success) {
+        setIsSubscribed(data.subscribed);
+        if (data.channelUsername) setChannelUsername(data.channelUsername);
+        if (data.channelUrl) setChannelUrl(data.channelUrl);
       }
-    } catch {
-      // Manual paste fallback
-    }
-  };
+    } catch {}
+  }
 
-  const handleExtract = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!url.trim()) return;
-
-    triggerHaptic('medium');
+  async function fetchMovies(query: string) {
     setLoading(true);
-    setError(null);
-    setMedia(null);
+    try {
+      const url = query ? `/api/movies?q=${encodeURIComponent(query)}` : '/api/movies';
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success && data.data) {
+        setMovies(data.data);
+      }
+    } catch (e) {
+      console.warn('Failed to load movies:', e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Handle Search Input Change
+  function handleSearch(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value;
+    setSearchQuery(val);
+    fetchMovies(val);
+  }
+
+  // Open Movie Detail Modal
+  function handleSelectMovie(movie: MovieItem) {
+    setSelectedMovie(movie);
+    setSelectedQuality(movie.qualities?.[0] || '1080p Full HD');
+    setSendSuccessMessage(null);
+    setSendErrorMessage(null);
+
+    if (window.Telegram?.WebApp?.HapticFeedback) {
+      window.Telegram.WebApp.HapticFeedback.impactOccurred('light');
+    }
+  }
+
+  // Send movie directly to Telegram chat with 3-hour self-destruct notice
+  async function handleSendToChat() {
+    if (!selectedMovie) return;
+
+    setSendingMovie(true);
+    setSendSuccessMessage(null);
+    setSendErrorMessage(null);
+
+    try {
+      const res = await fetch('/api/movies/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          title: selectedMovie.title,
+          quality: selectedQuality,
+          rating: selectedMovie.rating,
+          posterUrl: selectedMovie.posterUrl,
+          overview: selectedMovie.overview,
+          type: selectedMovie.type,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.notSubscribed) {
+        setShowSubModal(true);
+        if (data.channelUrl) setChannelUrl(data.channelUrl);
+        if (data.channelUsername) setChannelUsername(data.channelUsername);
+        return;
+      }
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Could not send movie to chat');
+      }
+
+      setSendSuccessMessage('Delivered to your Telegram chat! It will self-destruct in 3 hours.');
+      if (window.Telegram?.WebApp?.HapticFeedback) {
+        window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to send movie';
+      setSendErrorMessage(msg);
+      if (window.Telegram?.WebApp?.HapticFeedback) {
+        window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
+      }
+    } finally {
+      setSendingMovie(false);
+    }
+  }
+
+  // Social Media Link Extractor Handler
+  async function handleExtractSocial() {
+    if (!downloadUrl) return;
+    setExtracting(true);
+    setExtractError(null);
+    setExtractedMedia(null);
 
     try {
       const res = await fetch('/api/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim(), userId: user.id }),
+        body: JSON.stringify({ url: downloadUrl }),
       });
-
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Could not fetch video. Please check the link.');
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to extract media');
       }
-
-      setMedia(json.data);
-      triggerHaptic('success');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to extract media';
-      setError(message);
-      triggerHaptic('error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSendToChat = async () => {
-    if (!media) return;
-    triggerHaptic('medium');
-    setSendingToChat(true);
-    setSentSuccess(false);
-
-    try {
-      const res = await fetch('/api/send-to-chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          downloadUrl: media.downloadUrl,
-          title: media.title,
-          author: media.author,
-          platform: media.platform,
-        }),
-      });
-
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Failed to deliver video to chat');
+      setExtractedMedia(data.data);
+      if (window.Telegram?.WebApp?.HapticFeedback) {
+        window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
       }
-
-      setSentSuccess(true);
-      triggerHaptic('success');
-
-      // Auto close after 2.5 seconds so user is right in their chat with the video
-      setTimeout(() => {
-        if (window.Telegram?.WebApp?.close) {
-          window.Telegram.WebApp.close();
-        }
-      }, 2500);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Could not deliver video to chat';
-      setError(message);
-      triggerHaptic('error');
+      const msg = err instanceof Error ? err.message : 'Extraction error';
+      setExtractError(msg);
     } finally {
-      setSendingToChat(false);
+      setExtracting(false);
     }
-  };
+  }
 
-  const handleShareReferral = () => {
-    triggerHaptic('success');
-    const botName = process.env.NEXT_PUBLIC_BOT_USERNAME || 'MediaDownloaderBot';
-    const inviteLink = `https://t.me/${botName}?start=ref_${user.id}`;
-    const shareText = `🚀 Download HD videos from TikTok (no watermark), Instagram, and YouTube Shorts for free!\n\n👉 Join here: ${inviteLink}`;
+  // Filter movies by selected pill
+  const filteredMovies = movies.filter((m) => {
+    if (filterType === 'movie') return m.type === 'movie';
+    if (filterType === 'tv') return m.type === 'tv';
+    if (filterType === 'top') return m.rating >= 8.5;
+    return true;
+  });
 
-    const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText)}`;
-    if (window.Telegram?.WebApp?.openTelegramLink) {
-      window.Telegram.WebApp.openTelegramLink(tgShareUrl);
-    } else {
-      window.open(tgShareUrl, '_blank');
-    }
-  };
-
-  const detectedPlatform = () => {
-    const l = url.toLowerCase();
-    if (l.includes('tiktok.com')) return 'TikTok';
-    if (l.includes('instagram.com')) return 'Instagram';
-    if (l.includes('youtube.com') || l.includes('youtu.be')) return 'YouTube';
-    if (l.includes('twitter.com') || l.includes('x.com')) return 'Twitter / X';
-    if (l.includes('pinterest.com') || l.includes('pin.it')) return 'Pinterest';
-    return null;
-  };
+  const featuredMovie = movies[0];
 
   return (
-    <>
-      {/* Header Profile */}
-      <header className="header">
-        <div className="user-badge">
-          <div className="user-avatar">
-            {user.name.charAt(0).toUpperCase()}
+    <div className="app-container">
+      {/* Top Header */}
+      <header className="app-header">
+        <div className="brand-wrapper">
+          <div className="brand-icon-box">
+            <Film size={20} color="#FFF" />
           </div>
-          <div className="user-meta">
-            <span className="user-name">{user.name}</span>
-            <span className="user-status">⚡ VIP Member</span>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="brand-name">FlowLoad</span>
+              <span className="brand-badge">CINEMA</span>
+            </div>
           </div>
         </div>
 
-        <div className="vip-pill">
-          <Sparkles size={14} />
-          <span>PRO Free</span>
-        </div>
+        <button
+          className="user-badge-btn"
+          onClick={() => setActiveTab('channel')}
+        >
+          <div className={`sub-indicator ${isSubscribed ? '' : 'pending'}`} />
+          <span>{isSubscribed ? 'VIP Active' : 'Join VIP'}</span>
+        </button>
       </header>
 
-      {/* Mandatory Channel Subscription Warning if not joined */}
-      {!isSubscribed && (
-        <div className="channel-banner">
-          <div className="channel-banner-header">
-            <span className="channel-banner-title">
-              <Flame size={18} color="#F59E0B" /> Unlock HD Downloads
-            </span>
-            <span style={{ fontSize: '11px', color: '#FCD34D', fontWeight: 700 }}>Mandatory</span>
-          </div>
-          <p className="channel-banner-desc">
-            Subscribe to our official channel <b>{channelUsername}</b> to unlock fast watermark-free downloads and audio extraction.
-          </p>
-          <a
-            href={channelUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="btn-channel"
-            onClick={() => triggerHaptic('medium')}
-          >
-            📢 Join Official Channel <ArrowRight size={14} />
-          </a>
-        </div>
-      )}
-
-      {/* Tab 1: Home / Downloader */}
-      {activeTab === 'home' && (
-        <section>
-          <div style={{ marginBottom: 16 }}>
-            <h1 className="hero-title">
-              Fast <span className="gradient-text">Media Downloader</span>
-            </h1>
-            <p className="hero-subtitle">
-              Paste any link to download watermark-free HD videos and audio in seconds.
-            </p>
-          </div>
-
-          {/* Platform chips */}
-          <div className="platform-chips">
-            {['TikTok', 'Instagram', 'YouTube', 'Twitter / X', 'Pinterest'].map((p) => {
-              const active = detectedPlatform() === p;
-              return (
-                <div key={p} className={`platform-chip ${active ? 'active' : ''}`}>
-                  <span>{p}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Input & Action */}
-          <form onSubmit={handleExtract} className="input-wrapper">
-            <div className="input-box">
-              <input
-                type="url"
-                placeholder="Paste video link here..."
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                required
+      {/* Main Tab Views */}
+      {activeTab === 'cinema' && (
+        <main>
+          {/* Featured Hero Banner */}
+          {featuredMovie && !searchQuery && (
+            <div className="hero-card" onClick={() => handleSelectMovie(featuredMovie)}>
+              <img
+                src={featuredMovie.backdropUrl || featuredMovie.posterUrl}
+                alt={featuredMovie.title}
+                className="hero-backdrop"
               />
-              <button
-                type="button"
-                className="btn-paste"
-                onClick={handlePaste}
-                title="Paste from clipboard"
-              >
-                <Clipboard size={14} />
-                <span>Paste</span>
-              </button>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || !url.trim()}
-              className="btn-primary"
-            >
-              {loading ? (
-                <span>⚡ Fetching HD Media...</span>
-              ) : (
-                <>
-                  <Download size={18} />
-                  <span>Download Media</span>
-                </>
-              )}
-            </button>
-          </form>
-
-          {/* Error Message */}
-          {error && (
-            <div
-              className="glass-card"
-              style={{
-                borderColor: 'rgba(239, 68, 68, 0.4)',
-                background: 'rgba(239, 68, 68, 0.08)',
-                marginBottom: 20,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-              }}
-            >
-              <AlertCircle size={20} color="#EF4444" />
-              <span style={{ fontSize: '13px', color: '#FCA5A5' }}>{error}</span>
+              <div className="hero-gradient" />
+              <div className="hero-content">
+                <span className="hero-tag">
+                  <Flame size={12} /> #1 TRENDING THIS WEEK
+                </span>
+                <h1 className="hero-title">{featuredMovie.title}</h1>
+                <div className="hero-meta">
+                  <span className="rating-badge">
+                    <Star size={13} fill="#FBBF24" color="#FBBF24" /> {featuredMovie.rating}
+                  </span>
+                  <span>•</span>
+                  <span>{featuredMovie.releaseDate.slice(0, 4) || '2024'}</span>
+                  <span>•</span>
+                  <span className="quality-pill">1080p FULL HD</span>
+                  <span>•</span>
+                  <span style={{ color: '#00F2FE', fontWeight: 600 }}>
+                    {featuredMovie.type === 'tv' ? 'TV Series' : 'Movie'}
+                  </span>
+                </div>
+                <button className="hero-btn">
+                  <Play size={16} fill="#FFF" /> Stream / Download Now
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Extracted Media Preview */}
-          {media && (
-            <div className="glass-card preview-card">
-              {media.thumbnail && (
-                <div className="preview-media-container">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={media.thumbnail} alt={media.title} />
-                  <span className="preview-platform-badge">{media.platform}</span>
-                  {media.duration && <span className="preview-duration">{media.duration}</span>}
-                </div>
-              )}
-
-              <h2 className="preview-title">{media.title}</h2>
-              <p className="preview-author">{media.author || 'Creator'}</p>
-
-              {/* Download buttons */}
-              <div className="download-actions">
-                {/* Instant Zero-Ads Delivery to Telegram Chat */}
+          {/* Search Bar */}
+          <div className="search-container">
+            <div className="search-input-wrapper">
+              <Search size={18} className="search-icon" />
+              <input
+                type="text"
+                className="search-input"
+                placeholder="Search movies, TV shows, genres..."
+                value={searchQuery}
+                onChange={handleSearch}
+              />
+              {searchQuery && (
                 <button
-                  type="button"
-                  onClick={handleSendToChat}
-                  disabled={sendingToChat || sentSuccess}
-                  className="btn-primary"
-                  style={{
-                    background: sentSuccess
-                      ? 'linear-gradient(135deg, #10B981, #059669)'
-                      : 'linear-gradient(135deg, #00F2FE, #4FACFE)',
-                    color: '#030712',
-                    marginBottom: 6,
+                  className="clear-search-btn"
+                  onClick={() => {
+                    setSearchQuery('');
+                    fetchMovies('');
                   }}
                 >
-                  {sendingToChat ? (
-                    <span>⏳ Delivering to your Telegram chat...</span>
-                  ) : sentSuccess ? (
-                    <span>✅ Delivered! Check your chat with @FlowLoadvbot</span>
-                  ) : (
-                    <>
-                      <Sparkles size={18} />
-                      <span>Send to My Telegram Chat (No Ads)</span>
-                    </>
-                  )}
+                  <X size={16} />
                 </button>
+              )}
+            </div>
+          </div>
 
-                {/* Direct File Download via clean proxy */}
-                <a
-                  href={`/api/download?url=${encodeURIComponent(media.downloadUrl)}&filename=${encodeURIComponent(media.title)}.mp4`}
-                  className="btn-download-option"
-                  onClick={() => triggerHaptic('success')}
-                >
-                  <div className="btn-download-left">
-                    <Film size={20} color="#00F2FE" />
-                    <div>
-                      <div className="btn-download-title">Direct Save to Device</div>
-                      <div className="btn-download-sub">Native File Download • No Ads</div>
-                    </div>
-                  </div>
-                  <span className="btn-download-badge">FREE</span>
-                </a>
+          {/* Filter Pills */}
+          <div className="filter-pills">
+            <button
+              className={`filter-pill ${filterType === 'all' ? 'active' : ''}`}
+              onClick={() => setFilterType('all')}
+            >
+              🍿 All Titles
+            </button>
+            <button
+              className={`filter-pill ${filterType === 'movie' ? 'active' : ''}`}
+              onClick={() => setFilterType('movie')}
+            >
+              🎬 Movies
+            </button>
+            <button
+              className={`filter-pill ${filterType === 'tv' ? 'active' : ''}`}
+              onClick={() => setFilterType('tv')}
+            >
+              📺 TV Series
+            </button>
+            <button
+              className={`filter-pill ${filterType === 'top' ? 'active' : ''}`}
+              onClick={() => setFilterType('top')}
+            >
+              ⭐ Top Rated (8.5+)
+            </button>
+          </div>
 
-                {media.audioUrl && (
-                  <a
-                    href={`/api/download?url=${encodeURIComponent(media.audioUrl)}&filename=${encodeURIComponent(media.title)}.mp3`}
-                    className="btn-download-option"
-                    onClick={() => triggerHaptic('success')}
-                  >
-                    <div className="btn-download-left">
-                      <Music size={20} color="#8B5CF6" />
-                      <div>
-                        <div className="btn-download-title">Download Audio (MP3)</div>
-                        <div className="btn-download-sub">High Quality Audio Stream</div>
-                      </div>
-                    </div>
-                    <span className="btn-download-badge" style={{ background: 'rgba(139,92,246,0.15)', color: '#A78BFA' }}>
-                      AUDIO
+          {/* Section Header */}
+          <div className="section-header">
+            <h2 className="section-title">
+              {searchQuery ? `Results for "${searchQuery}"` : '🔥 Popular & Trending'}
+            </h2>
+            <span className="section-count">{filteredMovies.length} Available</span>
+          </div>
+
+          {/* Movie Grid */}
+          <div className="movie-grid">
+            {filteredMovies.map((movie) => (
+              <div
+                key={movie.id}
+                className="movie-card"
+                onClick={() => handleSelectMovie(movie)}
+              >
+                <div className="movie-poster-box">
+                  <img src={movie.posterUrl} alt={movie.title} className="movie-poster" />
+                  <div className="movie-overlay-badges">
+                    <span className="type-badge">
+                      {movie.type === 'tv' ? 'Series' : 'Movie'}
                     </span>
+                    <span className="score-badge">
+                      <Star size={11} fill="#FBBF24" color="#FBBF24" /> {movie.rating}
+                    </span>
+                  </div>
+                </div>
+                <div className="movie-info">
+                  <h3 className="movie-name">{movie.title}</h3>
+                  <div className="movie-footer-meta">
+                    <span>{movie.releaseDate.slice(0, 4) || 'HD'}</span>
+                    <span className="movie-quality-tag">1080p HD</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </main>
+      )}
+
+      {/* Social Media Downloader Tab */}
+      {activeTab === 'downloader' && (
+        <div className="downloader-box">
+          <div className="paste-input-card">
+            <div className="platforms-ribbon">
+              <span className="platform-pill">TikTok 1080p</span>
+              <span className="platform-pill">Instagram Reels</span>
+              <span className="platform-pill">YouTube Shorts</span>
+              <span className="platform-pill">Twitter / X</span>
+            </div>
+
+            <h2 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px' }}>
+              ⚡ All-in-One Social Downloader
+            </h2>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '14px' }}>
+              Paste any public video link to download without watermarks.
+            </p>
+
+            <div style={{ position: 'relative', marginBottom: '12px' }}>
+              <input
+                type="text"
+                className="search-input"
+                placeholder="Paste TikTok, IG, YouTube, or X link..."
+                value={downloadUrl}
+                onChange={(e) => setDownloadUrl(e.target.value)}
+                style={{ paddingLeft: '16px' }}
+              />
+            </div>
+
+            <button
+              className="send-to-chat-btn"
+              onClick={handleExtractSocial}
+              disabled={extracting || !downloadUrl}
+            >
+              {extracting ? (
+                <>⏳ Extracting HD Video...</>
+              ) : (
+                <>
+                  <Download size={18} /> Extract Video Stream
+                </>
+              )}
+            </button>
+          </div>
+
+          {extractError && (
+            <div className="alert-banner error">
+              <AlertCircle size={18} /> {extractError}
+            </div>
+          )}
+
+          {extractedMedia && (
+            <div className="paste-input-card" style={{ animation: 'slideUp 0.3s ease' }}>
+              {extractedMedia.thumbnail && (
+                <img
+                  src={extractedMedia.thumbnail}
+                  alt={extractedMedia.title}
+                  style={{
+                    width: '100%',
+                    height: '180px',
+                    objectFit: 'cover',
+                    borderRadius: 'var(--radius-md)',
+                    marginBottom: '12px',
+                  }}
+                />
+              )}
+              <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '4px' }}>
+                {extractedMedia.title}
+              </h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
+                👤 {extractedMedia.author || 'Creator'} • ⚡ {extractedMedia.quality || 'HD'}
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <a
+                  href={extractedMedia.downloadUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="send-to-chat-btn"
+                  style={{ textDecoration: 'none' }}
+                >
+                  <Download size={16} /> Direct Download MP4
+                </a>
+                {extractedMedia.audioUrl && (
+                  <a
+                    href={extractedMedia.audioUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="quality-option-btn"
+                    style={{ textDecoration: 'none', justifyContent: 'center' }}
+                  >
+                    🎵 Extract MP3 Audio Only
                   </a>
                 )}
               </div>
             </div>
           )}
-        </section>
+        </div>
       )}
 
-      {/* Tab 2: Referrals (Viral Growth Engine) */}
-      {activeTab === 'referrals' && (
-        <section>
-          <h1 className="hero-title">
-            Invite Friends, <span className="gradient-text">Earn VIP</span>
-          </h1>
-          <p className="hero-subtitle">
-            Share your invite link. Unlock unlimited batch downloads and priority speed for every friend who joins!
-          </p>
-
-          <div className="glass-card referral-card">
-            <div className="referral-stats">
-              <div className="stat-box">
-                <div className="stat-value">{referralsCount}</div>
-                <div className="stat-label">Friends Invited</div>
-              </div>
-              <div className="stat-box">
-                <div className="stat-value">Tier 1</div>
-                <div className="stat-label">VIP Status</div>
-              </div>
-            </div>
-
-            <div style={{ margin: '18px 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
-              🎁 <b>Reward Milestones:</b>
-              <ul style={{ paddingLeft: 18, marginTop: 8, lineHeight: 1.6 }}>
-                <li>3 Friends: Remove all cooldown delays (Unlocked ✅)</li>
-                <li>5 Friends: Unlock batch multi-link downloads</li>
-                <li>10 Friends: Lifetime VIP badge & instant support</li>
-              </ul>
-            </div>
-
-            <button onClick={handleShareReferral} className="btn-primary">
-              <Share2 size={18} />
-              <span>Share Invite Link</span>
-            </button>
+      {/* VIP & Referral Tab */}
+      {activeTab === 'vip' && (
+        <div className="referral-card">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+            <Sparkles size={24} color="#FBBF24" />
+            <h2 style={{ fontSize: '20px', fontWeight: 800 }}>VIP Referral Rewards</h2>
           </div>
-        </section>
-      )}
-
-      {/* Tab 3: Quests & Channel */}
-      {activeTab === 'quests' && (
-        <section>
-          <h1 className="hero-title">
-            Channel <span className="gradient-text">Quests</span>
-          </h1>
-          <p className="hero-subtitle">
-            Complete quick community tasks to support our channel and keep this service 100% free.
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            Invite friends to FlowLoad! Every friend who joins through your link gives you VIP points and bypasses download waiting times.
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div className="glass-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <CheckCircle2 size={24} color={isSubscribed ? '#10B981' : '#64748B'} />
+          <div className="referral-stat-grid">
+            <div className="stat-box">
+              <div className="stat-num">500</div>
+              <div className="stat-label">VIP Points</div>
+            </div>
+            <div className="stat-box">
+              <div className="stat-num" style={{ color: '#00F2FE' }}>3 Days</div>
+              <div className="stat-label">Daily Streak</div>
+            </div>
+            <div className="stat-box">
+              <div className="stat-num" style={{ color: '#34D399' }}>0</div>
+              <div className="stat-label">Friends Invited</div>
+            </div>
+          </div>
+
+          <div style={{ background: 'rgba(0,0,0,0.4)', padding: '14px', borderRadius: 'var(--radius-md)', marginBottom: '16px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>YOUR UNIQUE REFERRAL LINK:</div>
+            <div style={{ fontSize: '13px', color: '#00F2FE', wordBreak: 'break-all', fontWeight: 600 }}>
+              {`https://t.me/${process.env.NEXT_PUBLIC_BOT_USERNAME || 'FlowLoadvbot'}?start=ref_${user.id}`}
+            </div>
+          </div>
+
+          <button
+            className="send-to-chat-btn"
+            onClick={() => {
+              const link = `https://t.me/${process.env.NEXT_PUBLIC_BOT_USERNAME || 'FlowLoadvbot'}?start=ref_${user.id}`;
+              navigator.clipboard?.writeText(link);
+              setCopiedLink(true);
+              setTimeout(() => setCopiedLink(false), 2000);
+            }}
+          >
+            <Share2 size={16} /> {copiedLink ? '✅ Link Copied to Clipboard!' : 'Share Referral Link'}
+          </button>
+        </div>
+      )}
+
+      {/* Channel Subscription Gate Tab */}
+      {activeTab === 'channel' && (
+        <div className="referral-card">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+            <Radio size={24} color="#E50914" />
+            <h2 style={{ fontSize: '20px', fontWeight: 800 }}>Official Channel Gate</h2>
+          </div>
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '16px' }}>
+            All users must be subscribed to our official channel <b>{channelUsername}</b> to unlock 1080p full movie downloads and prevent bot bans.
+          </p>
+
+          <div
+            style={{
+              padding: '16px',
+              borderRadius: 'var(--radius-md)',
+              background: isSubscribed ? 'rgba(16, 185, 129, 0.1)' : 'rgba(229, 9, 20, 0.1)',
+              border: `1px solid ${isSubscribed ? '#10B981' : '#E50914'}`,
+              marginBottom: '16px',
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: '15px', color: isSubscribed ? '#34D399' : '#FF5A5F' }}>
+              {isSubscribed ? '✅ You are Subscribed!' : '🔒 Subscription Inactive'}
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+              Channel: <b>{channelUsername}</b>
+            </div>
+          </div>
+
+          <a
+            href={channelUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="send-to-chat-btn"
+            style={{ textDecoration: 'none', marginBottom: '10px' }}
+          >
+            <ExternalLink size={16} /> Open Official Channel
+          </a>
+
+          <button
+            className="quality-option-btn"
+            style={{ width: '100%', justifyContent: 'center' }}
+            onClick={checkSubscription}
+          >
+            🔄 Check & Verify Subscription
+          </button>
+        </div>
+      )}
+
+      {/* Movie Detail Modal with 3-Hour Copyright Notice */}
+      {selectedMovie && (
+        <div className="modal-overlay" onClick={() => setSelectedMovie(null)}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header-image">
+              <img
+                src={selectedMovie.backdropUrl || selectedMovie.posterUrl}
+                alt={selectedMovie.title}
+                className="modal-backdrop-img"
+              />
+              <div className="modal-image-gradient" />
+              <button className="modal-close-btn" onClick={() => setSelectedMovie(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <h2 className="modal-title">{selectedMovie.title}</h2>
+              <div className="modal-meta-row">
+                <span className="rating-badge">
+                  <Star size={14} fill="#FBBF24" color="#FBBF24" /> {selectedMovie.rating} / 10
+                </span>
+                <span>•</span>
+                <span>{selectedMovie.releaseDate.slice(0, 4) || '2024'}</span>
+                <span>•</span>
+                <span style={{ color: '#00F2FE', fontWeight: 600 }}>
+                  {selectedMovie.type === 'tv' ? 'TV Series' : 'Movie'}
+                </span>
+              </div>
+
+              {/* 3-Hour Copyright Notice Box */}
+              <div className="copyright-notice-box">
+                <div className="copyright-icon-wrap">
+                  <Clock size={20} />
+                </div>
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 700 }}>Join Announcement Channel</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{channelUsername}</div>
+                  <div className="copyright-title">⚠️ 3-Hour Self-Destruct Protection</div>
+                  <div className="copyright-desc">
+                    To comply with copyright laws and protect our servers from strikes, media files sent to your chat <b>AUTOMATICALLY SELF-DESTRUCT IN 3 HOURS</b>. Forward or save the file to your <b>Saved Messages</b> immediately to keep it permanently!
+                  </div>
                 </div>
               </div>
+
+              <p className="modal-synopsis">{selectedMovie.overview}</p>
+
+              {/* Quality Selector */}
+              <label className="quality-select-label">Select Download Stream:</label>
+              <div className="quality-options">
+                {(selectedMovie.qualities || ['1080p Full HD (2.2 GB)', '720p HD (980 MB)', '480p Mobile (420 MB)']).map(
+                  (q) => (
+                    <button
+                      key={q}
+                      className={`quality-option-btn ${selectedQuality === q ? 'selected' : ''}`}
+                      onClick={() => setSelectedQuality(q)}
+                    >
+                      <span>🎬 {q}</span>
+                      {selectedQuality === q && <CheckCircle2 size={16} color="#E50914" />}
+                    </button>
+                  )
+                )}
+              </div>
+
+              {/* Feedback Toasts */}
+              {sendSuccessMessage && (
+                <div className="alert-banner success">
+                  <CheckCircle2 size={18} />
+                  <span>{sendSuccessMessage}</span>
+                </div>
+              )}
+              {sendErrorMessage && (
+                <div className="alert-banner error">
+                  <AlertCircle size={18} />
+                  <span>{sendErrorMessage}</span>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="modal-actions">
+                <button
+                  className="send-to-chat-btn"
+                  onClick={handleSendToChat}
+                  disabled={sendingMovie}
+                >
+                  {sendingMovie ? (
+                    <>⏳ Sending to Telegram Chat...</>
+                  ) : (
+                    <>
+                      <Download size={18} /> Send to My Telegram Chat
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Force-Subscribe Modal (when user tries to download without subscribing) */}
+      {showSubModal && (
+        <div className="modal-overlay" onClick={() => setShowSubModal(false)}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()} style={{ padding: '24px' }}>
+            <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+              <div
+                style={{
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '50%',
+                  background: 'rgba(229, 9, 20, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 12px auto',
+                  border: '1px solid rgba(229, 9, 20, 0.4)',
+                }}
+              >
+                <ShieldAlert size={28} color="#E50914" />
+              </div>
+              <h2 style={{ fontSize: '20px', fontWeight: 800, marginBottom: '6px' }}>
+                Channel Subscription Required
+              </h2>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                To unlock HD movie streaming and support server bandwidth, please join our official Telegram channel <b>{channelUsername}</b>.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <a
                 href={channelUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="btn-paste"
+                className="send-to-chat-btn"
                 style={{ textDecoration: 'none' }}
-              >
-                {isSubscribed ? 'Joined' : 'Join'}
-              </a>
-            </div>
-
-            <div className="glass-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <Gift size={24} color="#F59E0B" />
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: 700 }}>Daily Login Streak</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Claim 100 XP every 24h</div>
-                </div>
-              </div>
-              <button
-                className="btn-paste"
                 onClick={() => {
-                  triggerHaptic('success');
-                  alert('🎉 Daily bonus claimed! Streak: Day 2');
+                  if (window.Telegram?.WebApp?.openTelegramLink) {
+                    window.Telegram.WebApp.openTelegramLink(channelUrl);
+                  }
                 }}
               >
-                Claim
+                📢 Step 1: Join {channelUsername}
+              </a>
+
+              <button
+                className="quality-option-btn"
+                style={{ justifyContent: 'center' }}
+                onClick={async () => {
+                  await checkSubscription();
+                  setShowSubModal(false);
+                  handleSendToChat();
+                }}
+              >
+                ✅ Step 2: I Have Joined (Verify & Download)
               </button>
             </div>
           </div>
-        </section>
+        </div>
       )}
 
-      {/* Bottom Sticky Navigation */}
+      {/* Bottom Navigation Bar */}
       <nav className="bottom-nav">
         <button
-          className={`nav-item ${activeTab === 'home' ? 'active' : ''}`}
-          onClick={() => {
-            triggerHaptic('medium');
-            setActiveTab('home');
-          }}
+          className={`nav-tab-btn ${activeTab === 'cinema' ? 'active' : ''}`}
+          onClick={() => setActiveTab('cinema')}
+        >
+          <Film size={20} />
+          <span>Cinema</span>
+        </button>
+
+        <button
+          className={`nav-tab-btn ${activeTab === 'downloader' ? 'active' : ''}`}
+          onClick={() => setActiveTab('downloader')}
         >
           <Download size={20} />
-          <span>Download</span>
+          <span>Downloader</span>
         </button>
 
         <button
-          className={`nav-item ${activeTab === 'referrals' ? 'active' : ''}`}
-          onClick={() => {
-            triggerHaptic('medium');
-            setActiveTab('referrals');
-          }}
+          className={`nav-tab-btn ${activeTab === 'vip' ? 'active' : ''}`}
+          onClick={() => setActiveTab('vip')}
         >
           <Users size={20} />
-          <span>Friends</span>
+          <span>VIP & Ref</span>
         </button>
 
         <button
-          className={`nav-item ${activeTab === 'quests' ? 'active' : ''}`}
-          onClick={() => {
-            triggerHaptic('medium');
-            setActiveTab('quests');
-          }}
+          className={`nav-tab-btn ${activeTab === 'channel' ? 'active' : ''}`}
+          onClick={() => setActiveTab('channel')}
         >
-          <Zap size={20} />
-          <span>Quests</span>
+          <Radio size={20} />
+          <span>Channel Gate</span>
         </button>
       </nav>
-    </>
+    </div>
   );
 }
