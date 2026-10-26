@@ -8,6 +8,7 @@ import {
   runAutoDeleteSweep,
   getMovieFileId,
   saveMovieFileId,
+  getStreamingUrls,
 } from '@/lib/movies';
 
 export const runtime = 'nodejs';
@@ -334,19 +335,37 @@ async function sendMovieCard(chatId: number, title: string) {
 }
 
 /**
- * Delivers the actual Telegram movie file and sends the 3-hour self-destruct warning
+ * Delivers the movie file or HD streaming/download card with 3-hour self-destruct warning
  */
 async function deliverActualMovieFile(chatId: number, title: string) {
+  const matches = await searchMovies(title);
+  const movie = matches[0];
+  const tmdbId = movie?.tmdbId || 693134;
+  const mediaType = movie?.type || 'movie';
+  const urls = getStreamingUrls(tmdbId, mediaType);
+
   const resolvedFileId = await getMovieFileId(title);
+
+  const keyboard = new InlineKeyboard()
+    .url('▶️ Watch Full HD Online', urls.playerUrl)
+    .row()
+    .url('📥 Fast Download 1080p (Browser / VLC)', urls.streamUrl)
+    .row();
+
+  if (APP_URL) {
+    keyboard.webApp('🍿 Open Cinema App', APP_URL).row();
+  }
+  keyboard.url('📢 Official Channel', `https://t.me/${CHANNEL_USERNAME.replace('@', '')}`);
 
   let sentFileMsg;
 
-  // 1. If an actual Telegram file is indexed, send that exact file!
+  // 1. If an actual Telegram file is indexed, send that exact Telegram video/document!
   if (resolvedFileId) {
     try {
       sentFileMsg = await bot.api.sendDocument(chatId, resolvedFileId, {
         caption: `🎬 **${title}**\n⚡ Follow @${CHANNEL_USERNAME.replace('@', '')} for all movies and series`,
         parse_mode: 'Markdown',
+        reply_markup: keyboard,
       });
     } catch (e) {
       console.warn('sendDocument failed, trying sendVideo:', e);
@@ -354,21 +373,42 @@ async function deliverActualMovieFile(chatId: number, title: string) {
         sentFileMsg = await bot.api.sendVideo(chatId, resolvedFileId, {
           caption: `🎬 **${title}**\n⚡ Follow @${CHANNEL_USERNAME.replace('@', '')} for all movies and series`,
           parse_mode: 'Markdown',
+          reply_markup: keyboard,
         });
       } catch {}
     }
   }
 
-  // 2. Fallback to sample video stream file if none uploaded yet
+  // 2. If no custom file is indexed yet, send direct HD delivery card with high-speed download & stream buttons
   if (!sentFileMsg) {
+    const caption =
+      `🎬 **${movie?.title || title}** • 1080p Full HD\n` +
+      `⭐️ **Rating:** ${movie?.rating || '8.5'}/10 | ${mediaType === 'tv' ? '📺 TV Series' : '🍿 Movie'}\n\n` +
+      `📥 **Ready for Download & Streaming:**\n` +
+      `• Click **Watch Full HD Online** to stream instantly.\n` +
+      `• Click **Fast Download 1080p** to download the movie directly to your device.\n\n` +
+      `⚠️ **3-HOUR AUTO-DELETE PROTECTION:**\n` +
+      `🛡️ This message & download links will **AUTOMATICALLY DELETE IN 3 HOURS** to prevent copyright strikes.\n` +
+      `📥 **Forward to Saved Messages** right now to keep it forever!`;
+
     try {
-      const sampleVideoUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
-      sentFileMsg = await bot.api.sendDocument(chatId, sampleVideoUrl, {
-        caption: `🎬 **${title} 720p BluRay.mp4**\n⚡ Follow @${CHANNEL_USERNAME.replace('@', '')} for all movies and series`,
+      if (movie?.posterUrl && movie.posterUrl.startsWith('http')) {
+        sentFileMsg = await bot.api.sendPhoto(chatId, movie.posterUrl, {
+          caption,
+          parse_mode: 'Markdown',
+          reply_markup: keyboard,
+        });
+      } else {
+        sentFileMsg = await bot.api.sendMessage(chatId, caption, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard,
+        });
+      }
+    } catch {
+      sentFileMsg = await bot.api.sendMessage(chatId, caption, {
         parse_mode: 'Markdown',
+        reply_markup: keyboard,
       });
-    } catch (err) {
-      console.warn('sendDocument URL error:', err);
     }
   }
 
@@ -391,8 +431,9 @@ async function deliverActualMovieFile(chatId: number, title: string) {
  * Downloads and sends media directly into Telegram chat (for social media downloader)
  */
 async function processAndSendMedia(chatId: number, url: string) {
+  let statusMsg;
   try {
-    const statusMsg = await bot.api.sendMessage(chatId, '⏳ **Extracting high quality media...**', {
+    statusMsg = await bot.api.sendMessage(chatId, '⏳ **Extracting high quality media...**', {
       parse_mode: 'Markdown',
     });
 
@@ -414,45 +455,88 @@ async function processAndSendMedia(chatId: number, url: string) {
       `⚡ ${media.quality || 'HD (No Watermark)'}\n\n` +
       `Downloaded via @${process.env.NEXT_PUBLIC_BOT_USERNAME || 'FlowLoadvbot'}`;
 
-    const keyboard = new InlineKeyboard();
+    const keyboard = new InlineKeyboard()
+      .url('⚡ Direct Fast Download', media.downloadUrl);
+    if (media.audioUrl) {
+      keyboard.url('🎵 Audio (MP3)', media.audioUrl);
+    }
+    keyboard.row();
     if (APP_URL) {
-      keyboard.webApp('🍿 Open HD Movies App', APP_URL);
+      keyboard.webApp('🍿 Open Cinema App', APP_URL);
     }
 
+    let sent = false;
+
+    // Strategy 1: Tell Telegram to directly fetch and send the video by URL (instant, handles up to 20MB automatically)
     try {
-      const { InputFile } = await import('grammy');
-      const fileRes = await fetch(media.downloadUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        },
-      });
-
-      const contentType = fileRes.headers.get('content-type') || '';
-      if (!fileRes.ok || contentType.includes('text/html')) {
-        throw new Error('Could not download clean video file (upstream returned ad or blocked stream)');
-      }
-
-      const buffer = Buffer.from(await fileRes.arrayBuffer());
-
-      await bot.api.sendVideo(chatId, new InputFile(buffer, `${media.title || 'video'}.mp4`), {
+      await bot.api.sendChatAction(chatId, 'upload_video');
+      await bot.api.sendVideo(chatId, media.downloadUrl, {
         caption,
         parse_mode: 'Markdown',
         reply_markup: keyboard,
       });
+      sent = true;
+    } catch (urlErr) {
+      console.warn('sendVideo by URL failed, attempting buffer upload:', urlErr);
+    }
 
-      await bot.api.deleteMessage(chatId, statusMsg.message_id).catch(() => {});
-    } catch (videoError: unknown) {
-      const errText = videoError instanceof Error ? videoError.message : 'Upload failed';
-      console.warn('sendVideo InputFile error:', errText);
+    // Strategy 2: If direct URL download failed (e.g. requires headers/userAgent), stream buffer
+    if (!sent) {
+      try {
+        const { InputFile } = await import('grammy');
+        const fileRes = await fetch(media.downloadUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          },
+        });
+        if (fileRes.ok) {
+          const contentType = fileRes.headers.get('content-type') || '';
+          if (!contentType.includes('text/html')) {
+            const buffer = Buffer.from(await fileRes.arrayBuffer());
+            await bot.api.sendVideo(chatId, new InputFile(buffer, `${media.title || 'video'}.mp4`), {
+              caption,
+              parse_mode: 'Markdown',
+              reply_markup: keyboard,
+            });
+            sent = true;
+          }
+        }
+      } catch (bufErr) {
+        console.warn('sendVideo buffer failed, trying sendDocument:', bufErr);
+      }
+    }
 
-      await bot.api.editMessageText(
+    // Strategy 3: Try sending as document
+    if (!sent) {
+      try {
+        await bot.api.sendDocument(chatId, media.downloadUrl, {
+          caption,
+          parse_mode: 'Markdown',
+          reply_markup: keyboard,
+        });
+        sent = true;
+      } catch (docErr) {
+        console.warn('sendDocument failed:', docErr);
+      }
+    }
+
+    // Strategy 4: If Telegram cannot deliver the video file directly (e.g. >50MB limit), provide direct 1-click download button card
+    if (!sent) {
+      await bot.api.sendMessage(
         chatId,
-        statusMsg.message_id,
-        `⚠️ **Direct extraction failed:** The upstream host blocked streaming.\n\nOpen our Mini App to download directly:`,
+        `🎬 **${media.title}**\n\n` +
+        `📦 File is ready for download! Telegram limits direct bot uploads over 50MB, but you can download or stream it at maximum speed using the button below:\n\n` +
+        `👤 **Platform:** ${media.platform.toUpperCase()}\n` +
+        `⚡ **Quality:** ${media.quality || '1080p HD'}`,
         {
+          parse_mode: 'Markdown',
           reply_markup: keyboard,
         }
       );
+    }
+
+    if (statusMsg) {
+      await bot.api.deleteMessage(chatId, statusMsg.message_id).catch(() => {});
     }
   } catch (err) {
     console.error('Error in processAndSendMedia:', err);

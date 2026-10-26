@@ -1,5 +1,5 @@
 export interface ExtractedMedia {
-  platform: 'tiktok' | 'instagram' | 'youtube' | 'twitter' | 'pinterest' | 'generic';
+  platform: 'tiktok' | 'instagram' | 'youtube' | 'twitter' | 'facebook' | 'pinterest' | 'generic';
   title: string;
   thumbnail?: string;
   author?: string;
@@ -25,12 +25,13 @@ export function detectPlatform(url: string): ExtractedMedia['platform'] {
   if (lower.includes('instagram.com')) return 'instagram';
   if (lower.includes('youtube.com') || lower.includes('youtu.be')) return 'youtube';
   if (lower.includes('twitter.com') || lower.includes('x.com')) return 'twitter';
+  if (lower.includes('facebook.com') || lower.includes('fb.watch') || lower.includes('fb.com')) return 'facebook';
   if (lower.includes('pinterest.com') || lower.includes('pin.it')) return 'pinterest';
   return 'generic';
 }
 
 /**
- * TikTok direct extractor via free public TikWM API (Fast, 1080p, no watermark)
+ * TikTok direct extractor via TikWM API (Fast, 1080p, no watermark)
  */
 async function extractTikTok(url: string): Promise<ExtractionResult> {
   try {
@@ -71,33 +72,78 @@ async function extractTikTok(url: string): Promise<ExtractionResult> {
 }
 
 /**
- * Instagram Reel & Video extractor via SnapSave engine
+ * Instagram Reel & Video extractor with multi-tier fallback
  */
 async function extractInstagram(url: string): Promise<ExtractionResult> {
+  // 1. Try SnapSave engine
   try {
     const { snapsave } = await import('snapsave-media-downloader');
     const res = await snapsave(url);
     if (res.success && res.data?.media && res.data.media.length > 0) {
       const item = res.data.media[0];
-      if (!item.url) {
-        throw new Error('No media URL returned by Instagram scraper');
+      if (item.url) {
+        return {
+          success: true,
+          data: {
+            platform: 'instagram',
+            title: 'Instagram Reel / Video',
+            thumbnail: item.thumbnail,
+            author: 'Instagram Creator',
+            downloadUrl: item.url,
+            quality: 'HD Original',
+            sourceUrl: url,
+          },
+        };
       }
+    }
+  } catch (err) {
+    console.warn('SnapSave Instagram error:', err);
+  }
+
+  // 2. Try instagram-url-direct engine
+  try {
+    const { instagramGetUrl } = await import('instagram-url-direct');
+    const res = await instagramGetUrl(url);
+    if (res && res.url_list && res.url_list.length > 0) {
       return {
         success: true,
         data: {
           platform: 'instagram',
-          title: 'Instagram Reel / Video',
-          thumbnail: item.thumbnail,
-          author: 'Instagram Creator',
-          downloadUrl: item.url,
+          title: 'Instagram Video',
+          thumbnail: res.url_list[0],
+          author: 'Instagram',
+          downloadUrl: res.url_list[0],
           quality: 'HD Original',
           sourceUrl: url,
         },
       };
     }
-  } catch (err: unknown) {
-    console.error('SnapSave Instagram error:', err);
+  } catch (err) {
+    console.warn('instagram-url-direct error:', err);
   }
+
+  // 3. Fallback to free public endpoint
+  try {
+    const res = await fetch(`https://api.vkrdown.com/instagram?url=${encodeURIComponent(url)}`);
+    if (res.ok) {
+      const json = await res.json();
+      const directUrl = json.data?.download_url || json.data?.url || json.url;
+      if (directUrl) {
+        return {
+          success: true,
+          data: {
+            platform: 'instagram',
+            title: json.data?.title || 'Instagram Video',
+            thumbnail: json.data?.thumbnail,
+            author: 'Instagram',
+            downloadUrl: directUrl,
+            quality: 'HD Original',
+            sourceUrl: url,
+          },
+        };
+      }
+    }
+  } catch {}
 
   return {
     success: false,
@@ -106,11 +152,45 @@ async function extractInstagram(url: string): Promise<ExtractionResult> {
 }
 
 /**
+ * Facebook Video extractor
+ */
+async function extractFacebook(url: string): Promise<ExtractionResult> {
+  try {
+    const { snapsave } = await import('snapsave-media-downloader');
+    const res = await snapsave(url);
+    if (res.success && res.data?.media && res.data.media.length > 0) {
+      const item = res.data.media[0];
+      if (item.url) {
+        return {
+          success: true,
+          data: {
+            platform: 'facebook',
+            title: 'Facebook Video',
+            thumbnail: item.thumbnail,
+            author: 'Facebook Creator',
+            downloadUrl: item.url,
+            quality: item.resolution || 'HD Video',
+            sourceUrl: url,
+          },
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('SnapSave Facebook error:', err);
+  }
+
+  return {
+    success: false,
+    error: 'Could not extract Facebook video. Make sure the video is public.',
+  };
+}
+
+/**
  * YouTube Video & Shorts extractor
  */
 async function extractYouTube(rawUrl: string): Promise<ExtractionResult> {
   try {
-    // Normalize any YouTube URL (youtu.be/ID or youtube.com/shorts/ID) to https://www.youtube.com/watch?v=ID
+    // Normalize YouTube URL
     let videoId = '';
     const youtuBeMatch = rawUrl.match(/youtu\.be\/([a-zA-Z0-9_-]+)/);
     const shortsMatch = rawUrl.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]+)/);
@@ -136,7 +216,6 @@ async function extractYouTube(rawUrl: string): Promise<ExtractionResult> {
     if (startRes.ok) {
       const startJson = await startRes.json();
       
-      // If cached download link is already present
       if (startJson.download_url) {
         return {
           success: true,
@@ -153,7 +232,6 @@ async function extractYouTube(rawUrl: string): Promise<ExtractionResult> {
       }
 
       if (startJson.id) {
-        // Poll for download URL (up to 15 seconds)
         for (let i = 0; i < 10; i++) {
           await new Promise((r) => setTimeout(r, 1500));
           const pRes = await fetch(`https://lto2.affadaffa.com/api/progress?id=${startJson.id}`);
@@ -251,6 +329,8 @@ export async function extractMedia(rawUrl: string): Promise<ExtractionResult> {
       return await extractYouTube(url);
     case 'twitter':
       return await extractTwitter(url);
+    case 'facebook':
+      return await extractFacebook(url);
     case 'pinterest':
     default:
       return await extractInstagram(url);

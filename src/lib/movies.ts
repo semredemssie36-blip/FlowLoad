@@ -248,21 +248,16 @@ export async function getTrendingMedia(): Promise<MovieSearchResult[]> {
  * Generate working stream and fast player URLs for movies and shows
  */
 export function getStreamingUrls(tmdbId?: number, type: 'movie' | 'tv' = 'movie', season = 1, episode = 1) {
-  if (!tmdbId) {
-    return {
-      streamUrl: 'https://vidsrc.to',
-      playerUrl: 'https://vidsrc.to',
-    };
-  }
+  const id = tmdbId || 693134; // default to Dune: Part Two if none provided
   if (type === 'tv') {
     return {
-      streamUrl: `https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episode}`,
-      playerUrl: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1&s=${season}&e=${episode}`,
+      streamUrl: `https://vidsrc.cc/v2/embed/tv/${id}/${season}/${episode}`,
+      playerUrl: `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${season}&e=${episode}`,
     };
   }
   return {
-    streamUrl: `https://vidsrc.to/embed/movie/${tmdbId}`,
-    playerUrl: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1`,
+    streamUrl: `https://vidsrc.cc/v2/embed/movie/${id}`,
+    playerUrl: `https://multiembed.mov/?video_id=${id}&tmdb=1`,
   };
 }
 

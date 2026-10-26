@@ -77,28 +77,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // If no custom file is uploaded yet, send a real playable MP4 video document
+    // If no custom file is indexed yet, deliver the high-speed movie card with full streaming & download buttons
     if (!sentMsg) {
-      try {
-        const playableVideoUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
-        sentMsg = await bot.api.sendDocument(numericUserId, playableVideoUrl, {
-          caption: `🎬 **${title} 720p BluRay.mp4**\n⚡ Follow @${process.env.NEXT_PUBLIC_BOT_USERNAME || 'FlowLoadvbot'} for all movies and series`,
+      if (posterUrl && posterUrl.startsWith('http')) {
+        sentMsg = await bot.api.sendPhoto(numericUserId, posterUrl, {
+          caption,
           parse_mode: 'Markdown',
+          reply_markup: keyboard,
         });
-      } catch (videoErr) {
-        console.warn('sendDocument URL failed, falling back to photo:', videoErr);
-        if (posterUrl && posterUrl.startsWith('http')) {
-          sentMsg = await bot.api.sendPhoto(numericUserId, posterUrl, {
-            caption,
-            parse_mode: 'Markdown',
-            reply_markup: keyboard,
-          });
-        } else {
-          sentMsg = await bot.api.sendMessage(numericUserId, caption, {
-            parse_mode: 'Markdown',
-            reply_markup: keyboard,
-          });
-        }
+      } else {
+        sentMsg = await bot.api.sendMessage(numericUserId, caption, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard,
+        });
       }
     }
 
