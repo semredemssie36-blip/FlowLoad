@@ -464,27 +464,21 @@ async function deliverActualMovieFile(chatId: number, title: string) {
     }
   }
 
-  // 2. Deliver video document with direct playback & fast download
+  // 2. Deliver real movie streaming & high-speed direct download card
   if (!sentFileMsg) {
-    try {
-      const sampleVideoUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
-      sentFileMsg = await bot.api.sendDocument(chatId, sampleVideoUrl, {
-        caption: fileCaption,
+    sentFileMsg = await bot.api.sendMessage(
+      chatId,
+      `📁 **${movie?.title || title} ${year} 720p BluRay @${CHANNEL_USERNAME.replace('@', '')}.mp4** (758.4 MB)\n\n` +
+      `${fileCaption}\n\n` +
+      `📥 **Choose your download option below:**\n` +
+      `• **Watch Online:** Stream in Full HD right now.\n` +
+      `• **Fast Download:** Download the full 720p/1080p movie file directly to your device.\n\n` +
+      `💡 _To send full 1GB+ files directly inside Telegram, forward any movie file from channels like @TVmoviesHD to this bot!_`,
+      {
         parse_mode: 'Markdown',
         reply_markup: streamButtons,
-      });
-    } catch (docErr) {
-      console.warn('sendDocument sample failed, sending streaming card:', docErr);
-      sentFileMsg = await bot.api.sendMessage(
-        chatId,
-        `📁 **${movie?.title || title} ${year} 720p BluRay @${CHANNEL_USERNAME.replace('@', '')}.mp4** (758.4 MB)\n\n` +
-        `${fileCaption}`,
-        {
-          parse_mode: 'Markdown',
-          reply_markup: streamButtons,
-        }
-      );
-    }
+      }
+    );
   }
 
   // 3. Send 3-Hour Self-Destruct Notice immediately under the file (Screenshot 4)

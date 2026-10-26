@@ -164,7 +164,7 @@ export const CURATED_MOVIES: MovieSearchResult[] = [
   },
 ];
 
-const TMDB_API_KEY = process.env.TMDB_API_KEY || '';
+const TMDB_API_KEY = process.env.TMDB_API_KEY || '4e44d9029b1270a757cddc766a1bcb63';
 
 /**
  * Search movies and TV series
