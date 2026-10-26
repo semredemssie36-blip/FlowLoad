@@ -20,6 +20,19 @@ export interface MovieSearchResult {
 // Built-in curated popular & trending catalog so the bot and UI work instantly
 export const CURATED_MOVIES: MovieSearchResult[] = [
   {
+    id: 'warm-bodies',
+    tmdbId: 82654,
+    title: 'Warm Bodies',
+    type: 'movie',
+    overview: 'After a zombie becomes involved with the girlfriend of one of his victims, their romance sets in motion a sequence of events that might transform the entire lifeless world.',
+    posterUrl: 'https://image.tmdb.org/t/p/w500/1hL4rM829Q4R2G08cW3h5lGjLwX.jpg',
+    backdropUrl: 'https://image.tmdb.org/t/p/original/gK49eI7zN7YyGgEwE7Z07k2yF2z.jpg',
+    releaseDate: '2013-02-01',
+    rating: 6.5,
+    genres: ['Horror', 'Comedy', 'Romance', 'Science Fiction'],
+    qualities: ['720p BluRay (758.4 MB)', '1080p Full HD (1.4 GB)', '480p Mobile (380 MB)'],
+  },
+  {
     id: 'dune-2',
     tmdbId: 693134,
     title: 'Dune: Part Two',
